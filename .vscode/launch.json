@@ -1,0 +1,24 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:video_box}",
+            "name": "Debug VideoWorkspace",
+            "target": "VideoWorkspace",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug VideoWorkspace"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:video_box}",
+            "name": "Release VideoWorkspace",
+            "target": "VideoWorkspace",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release VideoWorkspace"
+        }
+    ]
+}
