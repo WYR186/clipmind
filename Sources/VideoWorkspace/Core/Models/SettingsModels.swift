@@ -96,4 +96,18 @@ public struct AppSettings: Codable, Hashable, Sendable {
         self.defaults = defaults
         self.retentionPolicy = retentionPolicy
     }
+
+    // Forward-compatible decoder: missing fields fall back to defaults so
+    // existing databases (written before new fields were added) still load.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let fallback = AppSettings()
+        themeMode            = (try? c.decodeIfPresent(ThemeMode.self,              forKey: .themeMode))            ?? fallback.themeMode
+        proxyMode            = (try? c.decodeIfPresent(ProxyMode.self,              forKey: .proxyMode))            ?? fallback.proxyMode
+        customProxyAddress   = (try? c.decodeIfPresent(String.self,                 forKey: .customProxyAddress))   ?? fallback.customProxyAddress
+        simpleModeEnabled    = (try? c.decodeIfPresent(Bool.self,                   forKey: .simpleModeEnabled))    ?? fallback.simpleModeEnabled
+        onboardingCompleted  = (try? c.decodeIfPresent(Bool.self,                   forKey: .onboardingCompleted))  ?? fallback.onboardingCompleted
+        defaults             = (try? c.decodeIfPresent(DefaultPreferences.self,     forKey: .defaults))             ?? fallback.defaults
+        retentionPolicy      = (try? c.decodeIfPresent(ArtifactRetentionPolicy.self, forKey: .retentionPolicy))     ?? fallback.retentionPolicy
+    }
 }
