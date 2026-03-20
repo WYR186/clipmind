@@ -146,6 +146,11 @@ struct MacMultilineTextInputField: NSViewRepresentable {
         tv.isAutomaticSpellingCorrectionEnabled = false
         tv.isAutomaticQuoteSubstitutionEnabled = false
         tv.isAutomaticDashSubstitutionEnabled = false
+        tv.isAutomaticTextCompletionEnabled = false
+        tv.allowsCharacterPickerTouchBarItem = false
+        if #available(macOS 15.0, *) {
+            tv.writingToolsBehavior = .none
+        }
         tv.string = text
 
         scrollView.documentView = tv

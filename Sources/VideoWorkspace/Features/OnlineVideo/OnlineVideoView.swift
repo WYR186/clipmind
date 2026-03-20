@@ -12,7 +12,8 @@ struct OnlineVideoView: View {
             VStack(alignment: .leading, spacing: 16) {
                 SectionCardView(title: "Input URL") {
                     VStack(alignment: .leading, spacing: 10) {
-                        MacTextInputField(placeholder: "https://...", text: $localURLInput)
+                        TextField("https://...", text: $localURLInput)
+                            .textFieldStyle(.roundedBorder)
 
                         HStack {
                             Button(AppCopy.Buttons.inspect) {
@@ -161,7 +162,8 @@ struct OnlineVideoView: View {
 
                 SectionCardView(title: "Download / Export") {
                     VStack(alignment: .leading, spacing: 10) {
-                        MacTextInputField(placeholder: "Output directory", text: $localOutputDirectoryInput)
+                        TextField("Output directory", text: $localOutputDirectoryInput)
+                            .textFieldStyle(.roundedBorder)
 
                         HStack {
                             Button("\(AppCopy.Buttons.export) Video") {
