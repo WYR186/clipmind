@@ -99,13 +99,17 @@ actor DatabaseManager {
             )
         }
 
-        self.connection = try connectionProvider.openConnection(configuration: configuration)
+        let openedConnection = try connectionProvider.openConnection(configuration: configuration)
         do {
-            try runMigrations()
+            try DatabaseManager.runMigrations(
+                on: openedConnection,
+                logger: logger
+            )
         } catch {
-            connectionProvider.closeConnection(connection)
+            connectionProvider.closeConnection(openedConnection)
             throw error
         }
+        self.connection = openedConnection
     }
 
     deinit {
@@ -178,51 +182,6 @@ actor DatabaseManager {
 
     func schemaVersion() throws -> Int {
         Int(try readUserVersion())
-    }
-
-    private func runMigrations() throws {
-        let currentVersion = try readUserVersion()
-        let latestVersion = SchemaVersion.latest.rawValue
-
-        if currentVersion > latestVersion {
-            throw PersistenceError.unsupportedSchemaVersion(
-                current: Int(currentVersion),
-                latest: Int(latestVersion)
-            )
-        }
-
-        let pending = DatabaseMigrations.all
-            .filter { $0.version.rawValue > currentVersion }
-            .sorted { $0.version.rawValue < $1.version.rawValue }
-
-        guard !pending.isEmpty else { return }
-
-        for migration in pending {
-            do {
-                try execute(sql: "BEGIN IMMEDIATE TRANSACTION;")
-                for statement in migration.statements {
-                    try execute(sql: statement)
-                }
-                try execute(
-                    sql: "INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES (?, ?);",
-                    bindings: [
-                        .integer(Int64(migration.version.rawValue)),
-                        .double(Date().timeIntervalSince1970)
-                    ]
-                )
-                try execute(sql: "PRAGMA user_version = \(migration.version.rawValue);")
-                try execute(sql: "COMMIT;")
-            } catch {
-                if let connection {
-                    _ = sqlite3_exec(connection, "ROLLBACK;", nil, nil, nil)
-                }
-                logger?.error("Database migration failed: v\(migration.version.rawValue) - \(error.localizedDescription)")
-                throw PersistenceError.migrationFailed(
-                    version: Int(migration.version.rawValue),
-                    details: error.localizedDescription
-                )
-            }
-        }
     }
 
     private func readUserVersion() throws -> Int32 {
@@ -316,5 +275,192 @@ actor DatabaseManager {
 
     private func makeRepositoryWriteError(details: String) -> PersistenceError {
         PersistenceError.repositoryWriteFailed(repository: "database", details: details)
+    }
+}
+
+private extension DatabaseManager {
+    static func runMigrations(on connection: OpaquePointer?, logger: (any AppLoggerProtocol)?) throws {
+        let currentVersion = try readUserVersion(on: connection)
+        let latestVersion = SchemaVersion.latest.rawValue
+
+        if currentVersion > latestVersion {
+            throw PersistenceError.unsupportedSchemaVersion(
+                current: Int(currentVersion),
+                latest: Int(latestVersion)
+            )
+        }
+
+        let pending = DatabaseMigrations.all
+            .filter { $0.version.rawValue > currentVersion }
+            .sorted { $0.version.rawValue < $1.version.rawValue }
+
+        guard !pending.isEmpty else { return }
+
+        for migration in pending {
+            do {
+                try executeBootstrapSQL(on: connection, sql: "BEGIN IMMEDIATE TRANSACTION;")
+                for statement in migration.statements {
+                    try executeBootstrapSQL(on: connection, sql: statement)
+                }
+                try executeBootstrapSQL(
+                    on: connection,
+                    sql: "INSERT OR REPLACE INTO schema_migrations(version, applied_at) VALUES (?, ?);",
+                    bindings: [
+                        .integer(Int64(migration.version.rawValue)),
+                        .double(Date().timeIntervalSince1970)
+                    ]
+                )
+                try executeBootstrapSQL(on: connection, sql: "PRAGMA user_version = \(migration.version.rawValue);")
+                try executeBootstrapSQL(on: connection, sql: "COMMIT;")
+            } catch {
+                if let connection {
+                    _ = sqlite3_exec(connection, "ROLLBACK;", nil, nil, nil)
+                }
+                logger?.error("Database migration failed: v\(migration.version.rawValue) - \(error.localizedDescription)")
+                throw PersistenceError.migrationFailed(
+                    version: Int(migration.version.rawValue),
+                    details: error.localizedDescription
+                )
+            }
+        }
+    }
+
+    static func readUserVersion(on connection: OpaquePointer?) throws -> Int32 {
+        let rows = try queryBootstrapSQL(on: connection, sql: "PRAGMA user_version;")
+        return Int32(rows.first?.integer("user_version") ?? 0)
+    }
+
+    static func executeBootstrapSQL(
+        on connection: OpaquePointer?,
+        sql: String,
+        bindings: [SQLiteBinding] = []
+    ) throws {
+        guard let connection else {
+            throw PersistenceError.databaseOpenFailed(path: "unknown", details: "SQLite connection is closed during bootstrap")
+        }
+
+        var statement: OpaquePointer?
+        let prepareResult = sqlite3_prepare_v2(connection, sql, -1, &statement, nil)
+        guard prepareResult == SQLITE_OK else {
+            defer { sqlite3_finalize(statement) }
+            let details = String(cString: sqlite3_errmsg(connection))
+            throw PersistenceError.repositoryWriteFailed(repository: "database", details: details)
+        }
+        defer { sqlite3_finalize(statement) }
+
+        try bindBootstrap(bindings, to: statement, connection: connection)
+
+        let stepResult = sqlite3_step(statement)
+        guard stepResult == SQLITE_DONE else {
+            let details = String(cString: sqlite3_errmsg(connection))
+            throw PersistenceError.repositoryWriteFailed(repository: "database", details: details)
+        }
+    }
+
+    static func queryBootstrapSQL(
+        on connection: OpaquePointer?,
+        sql: String,
+        bindings: [SQLiteBinding] = []
+    ) throws -> [SQLiteRow] {
+        guard let connection else {
+            throw PersistenceError.databaseOpenFailed(path: "unknown", details: "SQLite connection is closed during bootstrap")
+        }
+
+        var statement: OpaquePointer?
+        let prepareResult = sqlite3_prepare_v2(connection, sql, -1, &statement, nil)
+        guard prepareResult == SQLITE_OK else {
+            defer { sqlite3_finalize(statement) }
+            let details = String(cString: sqlite3_errmsg(connection))
+            throw PersistenceError.repositoryReadFailed(repository: "database", details: details)
+        }
+        defer { sqlite3_finalize(statement) }
+
+        try bindBootstrap(bindings, to: statement, connection: connection)
+
+        var rows: [SQLiteRow] = []
+        while true {
+            let stepResult = sqlite3_step(statement)
+            if stepResult == SQLITE_ROW {
+                rows.append(readBootstrapRow(from: statement))
+                continue
+            }
+            if stepResult == SQLITE_DONE {
+                break
+            }
+
+            let details = String(cString: sqlite3_errmsg(connection))
+            throw PersistenceError.repositoryReadFailed(repository: "database", details: details)
+        }
+
+        return rows
+    }
+
+    static func bindBootstrap(
+        _ bindings: [SQLiteBinding],
+        to statement: OpaquePointer?,
+        connection: OpaquePointer
+    ) throws {
+        for (offset, binding) in bindings.enumerated() {
+            let index = Int32(offset + 1)
+            let result: Int32
+            switch binding {
+            case let .integer(value):
+                result = sqlite3_bind_int64(statement, index, value)
+            case let .double(value):
+                result = sqlite3_bind_double(statement, index, value)
+            case let .text(value):
+                result = sqlite3_bind_text(statement, index, value, -1, sqliteTransient)
+            case let .blob(data):
+                result = data.withUnsafeBytes { rawBuffer -> Int32 in
+                    guard let base = rawBuffer.baseAddress else {
+                        return sqlite3_bind_blob(statement, index, nil, 0, sqliteTransient)
+                    }
+                    return sqlite3_bind_blob(statement, index, base, Int32(data.count), sqliteTransient)
+                }
+            case .null:
+                result = sqlite3_bind_null(statement, index)
+            }
+
+            guard result == SQLITE_OK else {
+                let details = String(cString: sqlite3_errmsg(connection))
+                throw PersistenceError.repositoryWriteFailed(repository: "database", details: details)
+            }
+        }
+    }
+
+    static func readBootstrapRow(from statement: OpaquePointer?) -> SQLiteRow {
+        let count = sqlite3_column_count(statement)
+        var values: [String: SQLiteBinding] = [:]
+        values.reserveCapacity(Int(count))
+
+        for index in 0..<count {
+            let name = String(cString: sqlite3_column_name(statement, index))
+            let type = sqlite3_column_type(statement, index)
+
+            let value: SQLiteBinding
+            switch type {
+            case SQLITE_INTEGER:
+                value = .integer(sqlite3_column_int64(statement, index))
+            case SQLITE_FLOAT:
+                value = .double(sqlite3_column_double(statement, index))
+            case SQLITE_TEXT:
+                let raw = sqlite3_column_text(statement, index)
+                value = .text(raw.map { String(cString: $0) } ?? "")
+            case SQLITE_BLOB:
+                let bytes = sqlite3_column_blob(statement, index)
+                let length = Int(sqlite3_column_bytes(statement, index))
+                if let bytes, length > 0 {
+                    value = .blob(Data(bytes: bytes, count: length))
+                } else {
+                    value = .blob(Data())
+                }
+            default:
+                value = .null
+            }
+
+            values[name] = value
+        }
+
+        return SQLiteRow(values: values)
     }
 }

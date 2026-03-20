@@ -88,7 +88,12 @@ actor SQLiteTaskRepository: TaskRepositoryProtocol {
     }
 
     private func upsertBindings(task: TaskItem) -> [SQLiteBinding] {
-        [
+        let outputPathBinding: SQLiteBinding = task.outputPath.map { .text($0) } ?? .null
+        let errorCodeBinding: SQLiteBinding = task.error.map { .text($0.code) } ?? .null
+        let errorMessageBinding: SQLiteBinding = task.error.map { .text($0.message) } ?? .null
+        let technicalBinding: SQLiteBinding = task.error?.technicalDetails.map { .text($0) } ?? .null
+
+        return [
             .text(task.id.uuidString),
             .text(task.taskType.rawValue),
             .text(task.status.rawValue),
@@ -98,10 +103,10 @@ actor SQLiteTaskRepository: TaskRepositoryProtocol {
             .text(task.source.value),
             .double(task.createdAt.timeIntervalSince1970),
             .double(task.updatedAt.timeIntervalSince1970),
-            task.outputPath.map(SQLiteBinding.text) ?? .null,
-            task.error?.code.map(SQLiteBinding.text) ?? .null,
-            task.error?.message.map(SQLiteBinding.text) ?? .null,
-            task.error?.technicalDetails.map(SQLiteBinding.text) ?? .null
+            outputPathBinding,
+            errorCodeBinding,
+            errorMessageBinding,
+            technicalBinding
         ]
     }
 

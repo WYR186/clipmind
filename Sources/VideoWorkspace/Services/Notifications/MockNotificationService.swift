@@ -11,6 +11,10 @@ struct MockNotificationService: NotificationServiceProtocol {
         logger.debug("Mock notification authorization granted")
     }
 
+    func authorizationStatus() async -> NotificationAuthorizationState {
+        .authorized
+    }
+
     func notify(_ message: AppNotificationMessage) async {
         logger.info("Notification: \(message.title) - \(message.body)")
     }

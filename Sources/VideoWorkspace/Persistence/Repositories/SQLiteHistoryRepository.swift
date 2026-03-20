@@ -4,6 +4,7 @@ actor SQLiteHistoryRepository: HistoryRepositoryProtocol {
     private let databaseManager: DatabaseManager
     private let transcriptRepository: any TranscriptRepositoryProtocol
     private let summaryRepository: any SummaryRepositoryProtocol
+    private let translationRepository: any TranslationRepositoryProtocol
     private let logger: any AppLoggerProtocol
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
@@ -13,11 +14,13 @@ actor SQLiteHistoryRepository: HistoryRepositoryProtocol {
         databaseManager: DatabaseManager,
         transcriptRepository: any TranscriptRepositoryProtocol,
         summaryRepository: any SummaryRepositoryProtocol,
+        translationRepository: any TranslationRepositoryProtocol,
         logger: any AppLoggerProtocol
     ) {
         self.databaseManager = databaseManager
         self.transcriptRepository = transcriptRepository
         self.summaryRepository = summaryRepository
+        self.translationRepository = translationRepository
         self.logger = logger
     }
 
@@ -30,31 +33,46 @@ actor SQLiteHistoryRepository: HistoryRepositoryProtocol {
             await summaryRepository.upsertSummary(summary, historyID: entry.id)
         }
 
+        if let translation = entry.translation {
+            await translationRepository.upsertTranslation(translation, historyID: entry.id)
+        }
+
         do {
             let previewText = makePreviewText(entry: entry)
             let title = makeTitle(entry: entry)
             let downloadJSON = try encodeJSON(entry.downloadResult)
+            let taskBinding: SQLiteBinding = entry.taskID.map { .text($0.uuidString) } ?? .null
+            let transcriptBinding: SQLiteBinding = entry.transcript.map { .text($0.id.uuidString) } ?? .null
+            let summaryBinding: SQLiteBinding = entry.summary.map { .text($0.id.uuidString) } ?? .null
+            let translationBinding: SQLiteBinding = entry.translation.map { .text($0.id.uuidString) } ?? .null
+            let downloadBinding: SQLiteBinding = downloadJSON.map { .text($0) } ?? .null
+            let backendRaw = entry.transcript?.backend?.rawValue
+            let backendBinding: SQLiteBinding = backendRaw.map { .text($0) } ?? .null
+            let providerRaw = entry.summary?.provider.rawValue ?? entry.translation?.provider.rawValue
+            let providerBinding: SQLiteBinding = providerRaw.map { .text($0) } ?? .null
+            let preferredModelID = entry.translation?.modelID ?? entry.summary?.modelID ?? entry.transcript?.modelID
+            let modelBinding: SQLiteBinding = preferredModelID.map { .text($0) } ?? .null
 
-            try await databaseManager.execute(
-                sql: HistorySQL.upsert,
-                bindings: [
-                    .text(entry.id.uuidString),
-                    entry.taskID.map { .text($0.uuidString) } ?? .null,
-                    .text(entry.taskType.rawValue),
-                    .text(title),
-                    .text(entry.source.type.rawValue),
-                    .text(entry.source.value),
-                    .text(entry.source.value),
-                    entry.transcript.map { .text($0.id.uuidString) } ?? .null,
-                    entry.summary.map { .text($0.id.uuidString) } ?? .null,
-                    downloadJSON.map(SQLiteBinding.text) ?? .null,
-                    .text(previewText),
-                    entry.transcript?.backend.map { .text($0.rawValue) } ?? .null,
-                    entry.summary?.provider.map { .text($0.rawValue) } ?? .null,
-                    entry.summary?.modelID.map(SQLiteBinding.text) ?? entry.transcript?.modelID.map(SQLiteBinding.text) ?? .null,
-                    .double(entry.createdAt.timeIntervalSince1970)
-                ]
-            )
+            let bindings: [SQLiteBinding] = [
+                .text(entry.id.uuidString),
+                taskBinding,
+                .text(entry.taskType.rawValue),
+                .text(title),
+                .text(entry.source.type.rawValue),
+                .text(entry.source.value),
+                .text(entry.source.value),
+                transcriptBinding,
+                summaryBinding,
+                translationBinding,
+                downloadBinding,
+                .text(previewText),
+                backendBinding,
+                providerBinding,
+                modelBinding,
+                .double(entry.createdAt.timeIntervalSince1970)
+            ]
+
+            try await databaseManager.execute(sql: HistorySQL.upsert, bindings: bindings)
             await publish()
         } catch {
             logger.error("HistoryRepository write failed (id=\(entry.id)): \(error.localizedDescription)")
@@ -131,12 +149,16 @@ actor SQLiteHistoryRepository: HistoryRepositoryProtocol {
         let taskID = row.text("related_task_id").flatMap(UUID.init(uuidString:))
         let transcriptID = row.text("transcript_id").flatMap(UUID.init(uuidString:))
         let summaryID = row.text("summary_id").flatMap(UUID.init(uuidString:))
+        let translationID = row.text("translation_id").flatMap(UUID.init(uuidString:))
 
         let transcript = await transcriptID.flatMapAsync { id in
             await transcriptRepository.transcript(id: id)
         }
         let summary = await summaryID.flatMapAsync { id in
             await summaryRepository.summary(id: id)
+        }
+        let translation = await translationID.flatMapAsync { id in
+            await translationRepository.translation(id: id)
         }
 
         let downloadResult: MediaDownloadResult?
@@ -153,6 +175,7 @@ actor SQLiteHistoryRepository: HistoryRepositoryProtocol {
             taskType: taskType,
             transcript: transcript,
             summary: summary,
+            translation: translation,
             downloadResult: downloadResult,
             createdAt: Date(timeIntervalSince1970: createdAtRaw)
         )
@@ -170,6 +193,9 @@ actor SQLiteHistoryRepository: HistoryRepositoryProtocol {
     private func makePreviewText(entry: HistoryEntry) -> String {
         if let summary = entry.summary, !summary.content.isEmpty {
             return String(summary.content.prefix(160))
+        }
+        if let translation = entry.translation, !translation.translatedText.isEmpty {
+            return String(translation.translatedText.prefix(160))
         }
         if let transcript = entry.transcript, !transcript.content.isEmpty {
             return String(transcript.content.prefix(160))

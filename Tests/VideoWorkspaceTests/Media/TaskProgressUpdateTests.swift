@@ -8,6 +8,8 @@ final class TaskProgressUpdateTests: XCTestCase {
         let coordinator = TaskExecutionCoordinator(
             taskRepository: taskRepository,
             historyRepository: historyRepository,
+            artifactIndexingService: nil,
+            tempFileCleanupService: nil,
             logger: ConsoleLogger(),
             notificationService: MockNotificationService(logger: ConsoleLogger())
         )

@@ -14,9 +14,29 @@ struct DashboardView: View {
                 metricCard(title: "History", value: "\(viewModel.historyCount)", tint: .blue)
             }
 
+            ReadinessSummaryView(result: viewModel.smokeChecklistResult)
+
+            if let supportSummary = viewModel.supportSummary {
+                GroupBox("Support Snapshot") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Runtime: \(supportSummary.runtimeMode.rawValue)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Recent failures: \(supportSummary.recentFailureCount)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Text("Providers configured: \(supportSummary.providerStatus.filter { $0.configured }.count)/\(supportSummary.providerStatus.count)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.vertical, 4)
+                }
+            }
+
             GroupBox("Recent Tasks") {
                 if viewModel.recentTasks.isEmpty {
-                    Text("No tasks yet")
+                    Text(AppCopy.EmptyState.noRecentTasks)
                         .foregroundStyle(.secondary)
                 } else {
                     VStack(alignment: .leading, spacing: 8) {

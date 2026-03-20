@@ -12,7 +12,11 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "VideoWorkspace",
-            path: "Sources/VideoWorkspace"
+            path: "Sources/VideoWorkspace",
+            linkerSettings: [
+                .linkedLibrary("sqlite3"),
+                .linkedFramework("Security")
+            ]
         ),
         .testTarget(
             name: "VideoWorkspaceTests",

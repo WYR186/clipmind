@@ -5,6 +5,7 @@ public enum ArtifactOwnerType: String, Codable, CaseIterable, Sendable {
     case history
     case transcript
     case summary
+    case translation
     case download
 }
 
@@ -18,6 +19,10 @@ public enum ArtifactType: String, Codable, CaseIterable, Sendable {
     case summaryMarkdown = "summary_markdown"
     case summaryPlainText = "summary_plaintext"
     case summaryJSON = "summary_json"
+    case translationTXT = "translation_txt"
+    case translationSRT = "translation_srt"
+    case translationVTT = "translation_vtt"
+    case translationMarkdown = "translation_markdown"
     case localReference = "local_reference"
 }
 

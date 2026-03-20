@@ -3,11 +3,17 @@ import Foundation
 @MainActor
 final class LocalFilesViewModel: ObservableObject {
     @Published var filePathInput: String = MockSamples.localPath
+    @Published var batchFilePaths: [String] = []
+    @Published var batchOperationType: BatchOperationType = .transcribe
+    @Published var isCreatingBatch: Bool = false
     @Published var outputDirectoryInput: String = ""
     @Published var metadata: MediaMetadata?
     @Published var isInspecting: Bool = false
     @Published var isProcessing: Bool = false
     @Published var statusMessage: String = ""
+    @Published var lastOperationSummary: String = ""
+    @Published var latestError: UserFacingError?
+    @Published private(set) var isAdvancedMode: Bool = false
 
     @Published var selectedTranscriptionBackend: TranscriptionBackend = .whisperCPP
     @Published var openAIModelID: String = "gpt-4o-mini-transcribe"
@@ -31,7 +37,7 @@ final class LocalFilesViewModel: ObservableObject {
     @Published var selectedSummaryTemplateKind: SummaryPromptTemplateKind = .general
     @Published var selectedSummaryMode: SummaryMode = .abstractSummary
     @Published var selectedSummaryLength: SummaryLength = .medium
-    @Published var summaryOutputLanguage: String = "zh"
+    @Published var summaryOutputLanguage: String = "en"
     @Published var summaryOutputFormat: SummaryOutputFormat = .markdown
     @Published var summaryChunkingStrategy: SummaryChunkingStrategy = .segmentAware
     @Published var summaryStructuredOutputPreferred: Bool = true
@@ -40,13 +46,22 @@ final class LocalFilesViewModel: ObservableObject {
 
     private let environment: AppEnvironment
     private var latestTranscript: TranscriptItem?
+    private var settingsObserver: NSObjectProtocol?
 
     init(environment: AppEnvironment) {
         self.environment = environment
         ensureSampleFileExists(at: filePathInput)
+        registerSettingsObserver()
         Task {
             await loadTranscriptionDefaults()
             await loadModels()
+            await loadPresentationPreferences()
+        }
+    }
+
+    deinit {
+        if let settingsObserver {
+            NotificationCenter.default.removeObserver(settingsObserver)
         }
     }
 
@@ -70,6 +85,17 @@ final class LocalFilesViewModel: ObservableObject {
     func summarize() {
         Task {
             await runLocalTask(withSummary: true)
+        }
+    }
+
+    func setBatchFiles(urls: [URL]) {
+        let values = urls.map { $0.path }.sorted()
+        batchFilePaths = Array(NSOrderedSet(array: values)) as? [String] ?? values
+    }
+
+    func createBatchFromSelectedFiles() {
+        Task {
+            await runCreateBatchFromSelectedFiles()
         }
     }
 
@@ -108,10 +134,23 @@ final class LocalFilesViewModel: ObservableObject {
         summaryStructuredOutputPreferred = settings.defaults.summaryStructuredOutputPreferred
     }
 
+    private func loadPresentationPreferences() async {
+        let settings = await environment.settingsRepository.loadSettings()
+        isAdvancedMode = !settings.simpleModeEnabled
+    }
+
     private func performInspect() async {
         let trimmed = filePathInput.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            statusMessage = "Provide a local file path"
+            let mapped = UserFacingError(
+                title: "Path Required",
+                message: "Provide a local file path before inspection.",
+                code: "LOCAL_PATH_EMPTY",
+                service: "LocalInspection",
+                suggestions: [.retry]
+            )
+            latestError = mapped
+            statusMessage = mapped.message
             return
         }
 
@@ -121,23 +160,37 @@ final class LocalFilesViewModel: ObservableObject {
         do {
             let source = MediaSource(type: .localFile, value: trimmed)
             metadata = try await environment.mediaInspectionService.inspect(source: source)
+            latestError = nil
             statusMessage = "Local file inspected"
+            lastOperationSummary = "Inspect succeeded | source=local | videoStreams=\(metadata?.videoOptions.count ?? 0) | audioStreams=\(metadata?.audioOptions.count ?? 0)"
         } catch {
             metadata = nil
-            statusMessage = inspectionErrorMessage(from: error)
-            environment.logger.error("Local inspection error: \(inspectionDiagnostics(from: error))")
+            let mapped = ErrorPresentationMapper.map(error, context: "LocalInspection")
+            latestError = mapped
+            statusMessage = mapped.message
+            lastOperationSummary = "Inspect failed | code=\(mapped.code) | service=\(mapped.service)"
+            environment.logger.error("Local inspection error: \(mapped.diagnostics ?? inspectionDiagnostics(from: error))")
         }
     }
 
     private func runLocalTask(withSummary: Bool) async {
         guard let metadata else {
+            latestError = nil
             statusMessage = "Inspect local file first"
             return
         }
 
         let outputKinds = selectedOutputKinds()
         guard !outputKinds.isEmpty else {
-            statusMessage = "Select at least one transcript output format"
+            let mapped = UserFacingError(
+                title: "Output Format Required",
+                message: "Select at least one transcript output format.",
+                code: "TRANSCRIPT_OUTPUT_EMPTY",
+                service: "Transcription",
+                suggestions: [.retry]
+            )
+            latestError = mapped
+            statusMessage = mapped.message
             return
         }
 
@@ -147,6 +200,8 @@ final class LocalFilesViewModel: ObservableObject {
         let coordinator = TaskExecutionCoordinator(
             taskRepository: environment.taskRepository,
             historyRepository: environment.historyRepository,
+            artifactIndexingService: environment.artifactIndexingService,
+            tempFileCleanupService: environment.tempFileCleanupService,
             logger: environment.logger,
             notificationService: environment.notificationService
         )
@@ -168,7 +223,7 @@ final class LocalFilesViewModel: ObservableObject {
             outputDirectory: outputDirectoryInput,
             overwritePolicy: overwritePolicy,
             preprocessingRequired: preprocessingEnabled,
-            debugDiagnosticsEnabled: true,
+            debugDiagnosticsEnabled: isAdvancedMode,
             whisperExecutablePath: whisperExecutablePath,
             whisperModelPath: whisperModelPath
         )
@@ -228,7 +283,7 @@ final class LocalFilesViewModel: ObservableObject {
                     chunkingStrategy: summaryChunkingStrategy,
                     structuredOutputPreferred: summaryStructuredOutputPreferred,
                     outputFormat: summaryOutputFormat,
-                    debugDiagnosticsEnabled: true
+                    debugDiagnosticsEnabled: isAdvancedMode
                 )
 
                 summary = try await environment.summarizationService.summarize(
@@ -263,15 +318,93 @@ final class LocalFilesViewModel: ObservableObject {
                 summary: summary,
                 outputPath: transcriptionResult.artifacts.first?.path
             )
+            latestError = nil
             statusMessage = withSummary ? "Local summary completed" : "Local transcription completed"
+            if withSummary {
+                lastOperationSummary = "Transcribe+Summarize succeeded | backend=\(selectedTranscriptionBackend.rawValue) | provider=\(selectedProvider.rawValue) | model=\(selectedModelID)"
+            } else {
+                lastOperationSummary = "Transcribe succeeded | backend=\(selectedTranscriptionBackend.rawValue) | outputs=\(transcriptionResult.artifacts.count)"
+            }
         } catch {
-            let taskError = TaskError(
-                code: "LOCAL_TRANSCRIPTION_FAILED",
-                message: transcriptionErrorMessage(from: error),
-                technicalDetails: transcriptionDiagnostics(from: error)
-            )
+            let mapped = ErrorPresentationMapper.map(error, context: "LocalTask")
+            let taskError = TaskError(code: mapped.code, message: mapped.message, technicalDetails: mapped.diagnostics)
             await coordinator.failTask(task, error: taskError)
+            latestError = mapped
             statusMessage = taskError.message
+            lastOperationSummary = "Task failed | step=\(task.progress.currentStep) | code=\(mapped.code) | service=\(mapped.service)"
+        }
+    }
+
+    private func runCreateBatchFromSelectedFiles() async {
+        guard !batchFilePaths.isEmpty else {
+            let mapped = UserFacingError(
+                title: "Batch Files Required",
+                message: "Select one or more local files before creating a batch.",
+                code: "BATCH_LOCAL_FILES_EMPTY",
+                service: "BatchCreation",
+                suggestions: [.retry]
+            )
+            latestError = mapped
+            statusMessage = mapped.message
+            return
+        }
+
+        isCreatingBatch = true
+        defer { isCreatingBatch = false }
+
+        do {
+            let settings = await environment.settingsRepository.loadSettings()
+            let defaultsTemplate = BatchOperationTemplate.fromDefaults(
+                operationType: batchOperationType,
+                defaults: settings.defaults
+            )
+            let outputKinds = selectedOutputKinds()
+            let normalizedOutput = outputDirectoryInput.trimmingCharacters(in: .whitespacesAndNewlines)
+            let template = BatchOperationTemplate(
+                operationType: defaultsTemplate.operationType,
+                outputLanguage: summaryOutputLanguage,
+                summaryMode: selectedSummaryMode,
+                summaryLength: selectedSummaryLength,
+                provider: selectedProvider,
+                modelID: selectedModelID.isEmpty ? defaultsTemplate.modelID : selectedModelID,
+                summaryTemplateKind: selectedSummaryTemplateKind,
+                outputDirectory: normalizedOutput.isEmpty ? defaultsTemplate.outputDirectory : normalizedOutput,
+                transcriptionBackend: selectedTranscriptionBackend,
+                openAITranscriptionModel: openAIModelID,
+                whisperExecutablePath: whisperExecutablePath.isEmpty ? nil : whisperExecutablePath,
+                whisperModelPath: whisperModelPath.isEmpty ? nil : whisperModelPath,
+                transcriptionLanguageHint: transcriptionLanguageHint,
+                transcriptOutputKinds: outputKinds.isEmpty ? defaultsTemplate.transcriptOutputKinds : outputKinds,
+                overwritePolicy: overwritePolicy,
+                resumeDownloadsEnabled: defaultsTemplate.resumeDownloadsEnabled,
+                summaryChunkingStrategy: summaryChunkingStrategy,
+                summaryStructuredOutputPreferred: summaryStructuredOutputPreferred,
+                summaryOutputFormat: summaryOutputFormat,
+                maxConcurrentItems: defaultsTemplate.maxConcurrentItems
+            )
+
+            let request = BatchCreationRequest(
+                title: nil,
+                sourceType: .localFilesBatch,
+                sources: batchFilePaths.map { MediaSource(type: .localFile, value: $0) },
+                operationTemplate: template
+            )
+
+            let batch = try await environment.batchCreationService.createBatch(request: request)
+            await environment.batchExecutionService.start(batchJobID: batch.id)
+            latestError = nil
+            statusMessage = "Batch created: \(batch.totalCount) items"
+            lastOperationSummary = "Batch started | id=\(batch.id.uuidString) | count=\(batch.totalCount) | operation=\(batchOperationType.rawValue)"
+            NotificationCenter.default.post(
+                name: .appOpenBatchRequested,
+                object: nil,
+                userInfo: ["batchID": batch.id]
+            )
+        } catch {
+            let mapped = ErrorPresentationMapper.map(error, context: "BatchCreation")
+            latestError = mapped
+            statusMessage = mapped.message
+            lastOperationSummary = "Batch creation failed | code=\(mapped.code) | service=\(mapped.service)"
         }
     }
 
@@ -350,5 +483,18 @@ final class LocalFilesViewModel: ObservableObject {
             return transcriptionError.diagnostics
         }
         return error.localizedDescription
+    }
+
+    private func registerSettingsObserver() {
+        settingsObserver = NotificationCenter.default.addObserver(
+            forName: .appSettingsDidChange,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.loadPresentationPreferences()
+                await self?.loadTranscriptionDefaults()
+            }
+        }
     }
 }

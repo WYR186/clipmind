@@ -101,6 +101,79 @@ enum YTDLPJSONModels {
         let url: String?
         let name: String?
     }
+
+    struct PlaylistRoot: Decodable {
+        let id: String?
+        let title: String?
+        let extractor: String?
+        let extractorKey: String?
+        let webpageURL: String?
+        let thumbnail: String?
+        let playlistCount: Int?
+        let entries: [PlaylistEntry?]?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case title
+            case extractor
+            case extractorKey = "extractor_key"
+            case webpageURL = "webpage_url"
+            case thumbnail
+            case playlistCount = "playlist_count"
+            case entries
+        }
+
+        var hasPlaylistShape: Bool {
+            guard let entries else { return false }
+            return !entries.isEmpty
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decodeIfPresent(String.self, forKey: .id)
+            title = try container.decodeIfPresent(String.self, forKey: .title)
+            extractor = try container.decodeIfPresent(String.self, forKey: .extractor)
+            extractorKey = try container.decodeIfPresent(String.self, forKey: .extractorKey)
+            webpageURL = try container.decodeIfPresent(String.self, forKey: .webpageURL)
+            thumbnail = try container.decodeIfPresent(String.self, forKey: .thumbnail)
+            playlistCount = try container.decodeFlexibleIntIfPresent(forKey: .playlistCount)
+            entries = try container.decodeIfPresent([PlaylistEntry?].self, forKey: .entries)
+        }
+    }
+
+    struct PlaylistEntry: Decodable {
+        let id: String?
+        let title: String?
+        let url: String?
+        let webpageURL: String?
+        let duration: Double?
+        let playlistIndex: Int?
+        let availability: String?
+        let thumbnail: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case title
+            case url
+            case webpageURL = "webpage_url"
+            case duration
+            case playlistIndex = "playlist_index"
+            case availability
+            case thumbnail
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            id = try container.decodeIfPresent(String.self, forKey: .id)
+            title = try container.decodeIfPresent(String.self, forKey: .title)
+            url = try container.decodeIfPresent(String.self, forKey: .url)
+            webpageURL = try container.decodeIfPresent(String.self, forKey: .webpageURL)
+            duration = try container.decodeFlexibleDoubleIfPresent(forKey: .duration)
+            playlistIndex = try container.decodeFlexibleIntIfPresent(forKey: .playlistIndex)
+            availability = try container.decodeIfPresent(String.self, forKey: .availability)
+            thumbnail = try container.decodeIfPresent(String.self, forKey: .thumbnail)
+        }
+    }
 }
 
 private extension KeyedDecodingContainer {

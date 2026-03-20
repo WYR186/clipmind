@@ -15,28 +15,34 @@ actor SQLiteSummaryRepository: SummaryRepositoryProtocol {
         do {
             let structuredJSON = try encodeJSON(summary.structured)
             let artifactsJSON = try encodeJSON(summary.artifacts)
+            let historyBinding: SQLiteBinding = historyID.map { .text($0.uuidString) } ?? .null
+            let templateBinding: SQLiteBinding = summary.templateKind.map { .text($0.rawValue) } ?? .null
+            let outputLanguageBinding: SQLiteBinding = summary.outputLanguage.map { .text($0) } ?? .null
+            let structuredBinding: SQLiteBinding = structuredJSON.map { .text($0) } ?? .null
+            let markdownBinding: SQLiteBinding = summary.markdown.map { .text($0) } ?? .null
+            let plainBinding: SQLiteBinding = summary.plainText.map { .text($0) } ?? .null
+            let primaryArtifactBinding: SQLiteBinding = summary.artifacts.first.map { .text($0.path) } ?? .null
 
-            try await databaseManager.execute(
-                sql: SummarySQL.upsert,
-                bindings: [
-                    .text(summary.id.uuidString),
-                    .text(summary.taskID.uuidString),
-                    historyID.map { .text($0.uuidString) } ?? .null,
-                    .text(summary.provider.rawValue),
-                    .text(summary.modelID),
-                    summary.templateKind.map { .text($0.rawValue) } ?? .null,
-                    summary.outputLanguage.map(SQLiteBinding.text) ?? .null,
-                    .text(summary.mode.rawValue),
-                    .text(summary.length.rawValue),
-                    .text(summary.content),
-                    structuredJSON.map(SQLiteBinding.text) ?? .null,
-                    summary.markdown.map(SQLiteBinding.text) ?? .null,
-                    summary.plainText.map(SQLiteBinding.text) ?? .null,
-                    .text(artifactsJSON),
-                    summary.artifacts.first.map { .text($0.path) } ?? .null,
-                    .double(summary.createdAt.timeIntervalSince1970)
-                ]
-            )
+            let bindings: [SQLiteBinding] = [
+                .text(summary.id.uuidString),
+                .text(summary.taskID.uuidString),
+                historyBinding,
+                .text(summary.provider.rawValue),
+                .text(summary.modelID),
+                templateBinding,
+                outputLanguageBinding,
+                .text(summary.mode.rawValue),
+                .text(summary.length.rawValue),
+                .text(summary.content),
+                structuredBinding,
+                markdownBinding,
+                plainBinding,
+                .text(artifactsJSON ?? "[]"),
+                primaryArtifactBinding,
+                .double(summary.createdAt.timeIntervalSince1970)
+            ]
+
+            try await databaseManager.execute(sql: SummarySQL.upsert, bindings: bindings)
         } catch {
             logger.error("SummaryRepository upsert failed (id=\(summary.id)): \(error.localizedDescription)")
         }

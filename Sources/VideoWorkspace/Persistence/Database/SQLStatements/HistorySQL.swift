@@ -12,13 +12,14 @@ enum HistorySQL {
         source_reference,
         transcript_id,
         summary_id,
+        translation_id,
         download_result_json,
         preview_text,
         backend,
         provider,
         model,
         created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(id) DO UPDATE SET
         related_task_id = excluded.related_task_id,
         history_type = excluded.history_type,
@@ -28,6 +29,7 @@ enum HistorySQL {
         source_reference = excluded.source_reference,
         transcript_id = excluded.transcript_id,
         summary_id = excluded.summary_id,
+        translation_id = excluded.translation_id,
         download_result_json = excluded.download_result_json,
         preview_text = excluded.preview_text,
         backend = excluded.backend,
@@ -45,6 +47,7 @@ enum HistorySQL {
         source_value,
         transcript_id,
         summary_id,
+        translation_id,
         download_result_json,
         created_at
     FROM history_entries

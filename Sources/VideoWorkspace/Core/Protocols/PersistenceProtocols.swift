@@ -29,6 +29,11 @@ public protocol SummaryRepositoryProtocol: Sendable {
     func summary(id: UUID) async -> SummaryResult?
 }
 
+public protocol TranslationRepositoryProtocol: Sendable {
+    func upsertTranslation(_ translation: TranslationResult, historyID: UUID?) async
+    func translation(id: UUID) async -> TranslationResult?
+}
+
 public protocol ArtifactRepositoryProtocol: Sendable {
     func addArtifacts(_ artifacts: [ArtifactRecord]) async
     func artifacts(forTaskID taskID: UUID) async -> [ArtifactRecord]

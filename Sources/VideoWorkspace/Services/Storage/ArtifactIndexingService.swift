@@ -7,16 +7,13 @@ protocol ArtifactIndexingServiceProtocol: Sendable {
 struct ArtifactIndexingService: ArtifactIndexingServiceProtocol {
     let artifactRepository: any ArtifactRepositoryProtocol
     let logger: any AppLoggerProtocol
-    let fileManager: FileManager
 
     init(
         artifactRepository: any ArtifactRepositoryProtocol,
-        logger: any AppLoggerProtocol,
-        fileManager: FileManager = .default
+        logger: any AppLoggerProtocol
     ) {
         self.artifactRepository = artifactRepository
         self.logger = logger
-        self.fileManager = fileManager
     }
 
     func indexArtifacts(for entry: HistoryEntry) async {
@@ -120,11 +117,45 @@ struct ArtifactIndexingService: ArtifactIndexingServiceProtocol {
             }
         }
 
+        if let translation = entry.translation {
+            for artifact in translation.artifacts {
+                let type: ArtifactType
+                switch artifact.format {
+                case .txt:
+                    type = .translationTXT
+                case .srt:
+                    type = .translationSRT
+                case .vtt:
+                    type = .translationVTT
+                case .markdown:
+                    type = .translationMarkdown
+                }
+
+                records.append(
+                    ArtifactRecord(
+                        ownerType: .translation,
+                        ownerID: translation.id,
+                        relatedTaskID: entry.taskID ?? translation.taskID,
+                        relatedHistoryID: entry.id,
+                        artifactType: type,
+                        filePath: artifact.path,
+                        fileFormat: artifact.format.rawValue,
+                        sizeBytes: fileSize(at: artifact.path),
+                        backend: nil,
+                        provider: translation.provider,
+                        model: translation.modelID,
+                        createdAt: translation.createdAt
+                    )
+                )
+            }
+        }
+
         // TODO: Add artifact deduplication and cleanup policy hooks.
         return records
     }
 
     private func fileSize(at path: String) -> Int64? {
+        let fileManager = FileManager.default
         guard let attributes = try? fileManager.attributesOfItem(atPath: path),
               let number = attributes[.size] as? NSNumber
         else {

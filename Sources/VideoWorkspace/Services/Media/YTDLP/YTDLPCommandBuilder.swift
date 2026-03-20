@@ -11,4 +11,16 @@ struct YTDLPCommandBuilder {
             url
         ]
     }
+
+    func buildPlaylistInspectArguments(url: String) -> [String] {
+        [
+            "--dump-single-json",
+            "--skip-download",
+            "--no-warnings",
+            "--yes-playlist",
+            "--ignore-errors",
+            "--",
+            url
+        ]
+    }
 }

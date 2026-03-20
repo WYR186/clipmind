@@ -25,7 +25,7 @@ public struct DefaultPreferences: Codable, Hashable, Sendable {
 
     public init(
         subtitleLanguage: String = "en",
-        summaryLanguage: String = "zh",
+        summaryLanguage: String = "en",
         summaryProvider: ProviderType = .openAI,
         summaryModelID: String = "gpt-4.1-mini",
         summaryTemplateKind: SummaryPromptTemplateKind = .general,
@@ -75,19 +75,25 @@ public struct AppSettings: Codable, Hashable, Sendable {
     public var proxyMode: ProxyMode
     public var customProxyAddress: String
     public var simpleModeEnabled: Bool
+    public var onboardingCompleted: Bool
     public var defaults: DefaultPreferences
+    public var retentionPolicy: ArtifactRetentionPolicy
 
     public init(
         themeMode: ThemeMode = .system,
         proxyMode: ProxyMode = .system,
         customProxyAddress: String = "",
         simpleModeEnabled: Bool = true,
-        defaults: DefaultPreferences = DefaultPreferences()
+        onboardingCompleted: Bool = false,
+        defaults: DefaultPreferences = DefaultPreferences(),
+        retentionPolicy: ArtifactRetentionPolicy = .default
     ) {
         self.themeMode = themeMode
         self.proxyMode = proxyMode
         self.customProxyAddress = customProxyAddress
         self.simpleModeEnabled = simpleModeEnabled
+        self.onboardingCompleted = onboardingCompleted
         self.defaults = defaults
+        self.retentionPolicy = retentionPolicy
     }
 }

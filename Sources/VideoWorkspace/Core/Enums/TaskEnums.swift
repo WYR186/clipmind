@@ -5,6 +5,7 @@ public enum TaskType: String, Codable, CaseIterable, Sendable {
     case copyTranscript
     case transcribe
     case summarize
+    case translate
     case export
 }
 

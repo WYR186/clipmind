@@ -3,6 +3,8 @@ import Foundation
 struct TaskExecutionCoordinator {
     let taskRepository: any TaskRepositoryProtocol
     let historyRepository: any HistoryRepositoryProtocol
+    let artifactIndexingService: (any ArtifactIndexingServiceProtocol)?
+    let tempFileCleanupService: (any TempFileCleanupServiceProtocol)?
     let logger: any AppLoggerProtocol
     let notificationService: any NotificationServiceProtocol
 
@@ -34,6 +36,7 @@ struct TaskExecutionCoordinator {
         _ task: TaskItem,
         transcript: TranscriptItem?,
         summary: SummaryResult?,
+        translation: TranslationResult? = nil,
         downloadResult: MediaDownloadResult? = nil,
         outputPath: String? = nil
     ) async {
@@ -45,13 +48,17 @@ struct TaskExecutionCoordinator {
         )
 
         let entry = HistoryEntry(
+            taskID: completed.id,
             source: completed.source,
             taskType: completed.taskType,
             transcript: transcript,
             summary: summary,
+            translation: translation,
             downloadResult: downloadResult
         )
         await historyRepository.addHistoryEntry(entry)
+        await artifactIndexingService?.indexArtifacts(for: entry)
+        await tempFileCleanupService?.cleanupAfterTaskCompletion()
 
         await notificationService.notify(AppNotificationMessage(
             title: "Task Completed",
@@ -66,6 +73,11 @@ struct TaskExecutionCoordinator {
             progress: TaskProgressFactory.step(task.progress.fractionCompleted, description: "Failed"),
             error: error
         )
+        await tempFileCleanupService?.cleanupAfterTaskFailure()
+        await notificationService.notify(AppNotificationMessage(
+            title: "Task Failed",
+            body: "\(task.taskType.rawValue.capitalized) failed: \(error.message)"
+        ))
         logger.error("Task failed: \(task.id) - \(error.message)")
     }
 }

@@ -155,6 +155,114 @@ enum DatabaseMigrations {
                 );
                 """
             ]
+        ),
+        DatabaseMigration(
+            version: .v2,
+            statements: [
+                """
+                CREATE TABLE IF NOT EXISTS batch_jobs (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    progress_fraction REAL NOT NULL,
+                    total_count INTEGER NOT NULL,
+                    completed_count INTEGER NOT NULL,
+                    failed_count INTEGER NOT NULL,
+                    running_count INTEGER NOT NULL,
+                    pending_count INTEGER NOT NULL,
+                    cancelled_count INTEGER NOT NULL,
+                    operation_template_json TEXT NOT NULL,
+                    child_task_ids_json TEXT NOT NULL,
+                    last_error_summary TEXT,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL
+                );
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_batch_jobs_created_at
+                ON batch_jobs(created_at DESC);
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS batch_job_items (
+                    id TEXT PRIMARY KEY,
+                    batch_job_id TEXT NOT NULL,
+                    source_type TEXT NOT NULL,
+                    source_value TEXT NOT NULL,
+                    task_id TEXT,
+                    status TEXT NOT NULL,
+                    progress_fraction REAL NOT NULL,
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    failure_reason TEXT,
+                    error_code TEXT,
+                    FOREIGN KEY(batch_job_id) REFERENCES batch_jobs(id) ON DELETE CASCADE
+                );
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_batch_job_items_batch_id
+                ON batch_job_items(batch_job_id);
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_batch_job_items_status
+                ON batch_job_items(status);
+                """
+            ]
+        ),
+        DatabaseMigration(
+            version: .v3,
+            statements: [
+                """
+                ALTER TABLE batch_jobs
+                ADD COLUMN source_descriptor TEXT;
+                """,
+                """
+                ALTER TABLE batch_jobs
+                ADD COLUMN source_metadata_json TEXT;
+                """
+            ]
+        ),
+        DatabaseMigration(
+            version: .v4,
+            statements: [
+                """
+                CREATE TABLE IF NOT EXISTS translation_results (
+                    id TEXT PRIMARY KEY,
+                    task_id TEXT NOT NULL,
+                    history_id TEXT,
+                    source_transcript_id TEXT,
+                    provider TEXT NOT NULL,
+                    model_id TEXT NOT NULL,
+                    source_language TEXT NOT NULL,
+                    target_language TEXT NOT NULL,
+                    mode TEXT NOT NULL,
+                    style TEXT NOT NULL,
+                    translated_text TEXT NOT NULL,
+                    bilingual_text TEXT,
+                    segments_json TEXT NOT NULL,
+                    artifacts_json TEXT NOT NULL,
+                    diagnostics TEXT,
+                    primary_artifact_path TEXT,
+                    created_at REAL NOT NULL
+                );
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_translation_task_id
+                ON translation_results(task_id);
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_translation_source_transcript_id
+                ON translation_results(source_transcript_id);
+                """,
+                """
+                ALTER TABLE history_entries
+                ADD COLUMN translation_id TEXT;
+                """,
+                """
+                CREATE INDEX IF NOT EXISTS idx_history_translation_id
+                ON history_entries(translation_id);
+                """
+            ]
         )
     ]
 }

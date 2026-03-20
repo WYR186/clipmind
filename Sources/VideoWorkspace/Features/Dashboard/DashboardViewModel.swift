@@ -6,6 +6,8 @@ final class DashboardViewModel: ObservableObject {
     @Published private(set) var completedCount: Int = 0
     @Published private(set) var failedCount: Int = 0
     @Published private(set) var historyCount: Int = 0
+    @Published private(set) var smokeChecklistResult: SmokeChecklistResult?
+    @Published private(set) var supportSummary: SupportSummary?
 
     private let environment: AppEnvironment
     private var taskObservation: Task<Void, Never>?
@@ -15,6 +17,7 @@ final class DashboardViewModel: ObservableObject {
         self.environment = environment
         observeTasks()
         observeHistory()
+        runReadiness()
     }
 
     deinit {
@@ -31,6 +34,9 @@ final class DashboardViewModel: ObservableObject {
                 self.recentTasks = Array(tasks.prefix(5))
                 self.completedCount = tasks.filter { $0.status == .completed }.count
                 self.failedCount = tasks.filter { $0.status == .failed }.count
+                self.supportSummary = await environment.supportSummaryService.generateSummary(
+                    preflightResult: self.smokeChecklistResult?.preflightResult
+                )
             }
         }
     }
@@ -43,6 +49,16 @@ final class DashboardViewModel: ObservableObject {
             for await entries in stream {
                 self.historyCount = entries.count
             }
+        }
+    }
+
+    private func runReadiness() {
+        Task {
+            let checklist = await environment.smokeChecklistService.runChecklist(force: false)
+            smokeChecklistResult = checklist
+            supportSummary = await environment.supportSummaryService.generateSummary(
+                preflightResult: checklist.preflightResult
+            )
         }
     }
 }
