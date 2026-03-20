@@ -80,7 +80,8 @@ struct SettingsView: View {
                 )
             }
 
-            MacTextInputField(placeholder: "API key", text: $viewModel.apiKeyInput)
+            SecureField("API key", text: $viewModel.apiKeyInput)
+                .textFieldStyle(.roundedBorder)
             HStack {
                 Button("Save API Key") { viewModel.saveAPIKey() }
                 Button("Delete API Key") { viewModel.deleteAPIKey() }
@@ -123,7 +124,8 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
 
-            MacTextInputField(placeholder: "API key", text: $viewModel.apiKeyInput)
+            SecureField("API key", text: $viewModel.apiKeyInput)
+                .textFieldStyle(.roundedBorder)
             HStack {
                 Button("Save API Key") { viewModel.saveAPIKey() }
                 Button("Delete API Key") { viewModel.deleteAPIKey() }
@@ -136,8 +138,10 @@ struct SettingsView: View {
 
     private var defaultsSection: some View {
         Section("Defaults") {
-            MacTextInputField(placeholder: "Default subtitle language (e.g. en)", text: $viewModel.settings.defaults.subtitleLanguage)
-            MacTextInputField(placeholder: "Default summary language (e.g. en)", text: $viewModel.settings.defaults.summaryLanguage)
+            TextField("Default subtitle language (e.g. en)", text: $viewModel.settings.defaults.subtitleLanguage)
+                .textFieldStyle(.roundedBorder)
+            TextField("Default summary language (e.g. en)", text: $viewModel.settings.defaults.summaryLanguage)
+                .textFieldStyle(.roundedBorder)
 
             Picker("Default summary provider", selection: $viewModel.settings.defaults.summaryProvider) {
                 ForEach(ProviderType.allCases, id: \.self) { provider in
@@ -145,7 +149,8 @@ struct SettingsView: View {
                 }
             }
 
-            MacTextInputField(placeholder: "Default summary model", text: $viewModel.settings.defaults.summaryModelID)
+            TextField("Default summary model", text: $viewModel.settings.defaults.summaryModelID)
+                .textFieldStyle(.roundedBorder)
 
             Picker("Default summary mode", selection: $viewModel.settings.defaults.summaryMode) {
                 ForEach(SummaryMode.allCases, id: \.self) { mode in
@@ -158,8 +163,10 @@ struct SettingsView: View {
                 }
             }
 
-            MacTextInputField(placeholder: "Preferred video quality (e.g. 720p)", text: $viewModel.settings.defaults.videoQuality)
-            MacTextInputField(placeholder: "Default export directory", text: $viewModel.settings.defaults.exportDirectory)
+            TextField("Preferred video quality (e.g. 720p)", text: $viewModel.settings.defaults.videoQuality)
+                .textFieldStyle(.roundedBorder)
+            TextField("Default export directory", text: $viewModel.settings.defaults.exportDirectory)
+                .textFieldStyle(.roundedBorder)
             Toggle("Resume downloads", isOn: $viewModel.settings.defaults.resumeDownloadsEnabled)
             Picker("Overwrite policy", selection: $viewModel.settings.defaults.overwritePolicy) {
                 ForEach(FileOverwritePolicy.allCases, id: \.self) { policy in
@@ -187,7 +194,8 @@ struct SettingsView: View {
                     Text(mode.rawValue).tag(mode)
                 }
             }
-            MacTextInputField(placeholder: "Custom proxy address", text: $viewModel.settings.customProxyAddress)
+            TextField("Custom proxy address", text: $viewModel.settings.customProxyAddress)
+                .textFieldStyle(.roundedBorder)
 
             Divider()
 
@@ -196,10 +204,14 @@ struct SettingsView: View {
                     Text(backend.rawValue).tag(backend)
                 }
             }
-            MacTextInputField(placeholder: "OpenAI transcription model", text: $viewModel.settings.defaults.openAITranscriptionModel)
-            MacTextInputField(placeholder: "whisper.cpp executable path", text: $viewModel.settings.defaults.whisperExecutablePath)
-            MacTextInputField(placeholder: "Whisper model path", text: $viewModel.settings.defaults.whisperModelPath)
-            MacTextInputField(placeholder: "Transcription language hint (e.g. zh)", text: $viewModel.settings.defaults.transcriptionLanguageHint)
+            TextField("OpenAI transcription model", text: $viewModel.settings.defaults.openAITranscriptionModel)
+                .textFieldStyle(.roundedBorder)
+            TextField("whisper.cpp executable path", text: $viewModel.settings.defaults.whisperExecutablePath)
+                .textFieldStyle(.roundedBorder)
+            TextField("Whisper model path", text: $viewModel.settings.defaults.whisperModelPath)
+                .textFieldStyle(.roundedBorder)
+            TextField("Transcription language hint (e.g. zh)", text: $viewModel.settings.defaults.transcriptionLanguageHint)
+                .textFieldStyle(.roundedBorder)
             Toggle("Enable audio preprocessing", isOn: $viewModel.settings.defaults.transcriptionPreprocessingEnabled)
 
             Divider()

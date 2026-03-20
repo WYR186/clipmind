@@ -45,8 +45,9 @@ struct OnlineVideoView: View {
 
                 SectionCardView(title: "Batch URLs") {
                     VStack(alignment: .leading, spacing: 10) {
-                        MacMultilineTextInputField(text: $localBatchURLsInput)
+                        TextEditor(text: $localBatchURLsInput)
                             .frame(minHeight: 130, idealHeight: 150, maxHeight: 260)
+                            .font(.body)
                             .padding(6)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8, style: .continuous)

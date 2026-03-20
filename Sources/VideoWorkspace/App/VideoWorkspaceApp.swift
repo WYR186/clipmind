@@ -25,6 +25,15 @@ struct VideoWorkspaceApp: App {
         WindowGroup {
             VideoWorkspaceRootView(appViewModel: appViewModel)
                 .frame(minWidth: 1100, minHeight: 720)
+                .onAppear {
+                    #if canImport(AppKit)
+                    // Bring the app window to the front automatically after launch,
+                    // even when built and run from Xcode (which keeps itself as key app).
+                    DispatchQueue.main.async {
+                        NSApp.activate(ignoringOtherApps: true)
+                    }
+                    #endif
+                }
         }
     }
 }
